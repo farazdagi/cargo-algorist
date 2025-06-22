@@ -94,9 +94,9 @@ fn main() {
 }
 ```
 
-See the [`documentation`](https://docs.rs/algorist/latest/algorist/algorist/) on `io` module (and
-other provided algorithms and data structures) for more details on the default code provided in
-problem files.
+See the [`documentation`](https://docs.rs/algorist/latest/algorist/) on `io` module (and other
+provided algorithms and data structures) for more details on the default code provided in problem
+files.
 
 Normally, when working on solution, you copy the tests cases from the contest system into the
 clipboard (or file), and then need to see the output of your program:
@@ -133,8 +133,8 @@ Only the modules actually used in the problem file will be included in the outpu
 The Algorist is also a library of algorithms and data structures, which will be copied into your
 contest project, and can be used in your problem files.
 
-See [`algorist`](https://docs.rs/algorist/latest/algorist/algorist/) module documentation for a
-complete list of available algorithms and data structures, as well as their usage examples.
+See [`algorist`](https://docs.rs/algorist/latest/algorist/) documentation for a complete list of
+available algorithms and data structures, as well as their usage examples.
 
 ## License
 
