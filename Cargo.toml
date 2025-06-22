@@ -1,0 +1,37 @@
+[package]
+name = "cargo-algorist"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Victor Farazdagi <farazdagi@gmail.com>"]
+description = "Cargo subcommand to manage the algorist crate"
+homepage = "https://github.com/farazdagi/cargo-algorist"
+repository = "https://github.com/farazdagi/cargo-algorist"
+documentation = "https://docs.rs/cargo-algorist"
+readme = "README.md"
+keywords = [
+  "algorithms",
+  "data-structures",
+  "codeforces",
+  "competitive-programming",
+]
+categories = ["algorithms", "data-structures"]
+
+[[bin]]
+name = "cargo-algorist"
+path = "src/main.rs"
+
+[dependencies]
+argh = "0.1.13"
+anyhow = "1.0"
+include_dir = { version = "0.7", features = ["glob"] }
+syn = { version = "2", features = [
+  "full",
+  "visit",
+  "visit-mut",
+  "extra-traits",
+] }
+quote = "1"
+proc-macro2 = "1.0"
+prettyplease = "0.2"
+tap = "1.0"
