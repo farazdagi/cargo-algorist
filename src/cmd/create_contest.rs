@@ -1,5 +1,5 @@
 use {
-    crate::cmd::{GITIGNORE, RUSTFMT_TOML, SRC_DIR, SubCmd, TPL_DIR, copy, copy_to},
+    crate::cmd::{GITIGNORE, RUSTFMT_TOML, SubCmd, TPL_DIR, copy, copy_to},
     anyhow::{Context, Result, anyhow},
     argh::FromArgs,
     std::{
@@ -65,7 +65,7 @@ impl CreateContestSubCmd {
                     format!("Manifest file not found: {:?}", manifest_path),
                 ));
             }
-            unimplemented!("Using a custom manifest path is not yet implemented.");
+            println!("Using a custom manifest path is not yet implemented.");
             return Ok(());
         }
 
@@ -112,6 +112,7 @@ impl CreateContestSubCmd {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn manifest_path(&self) -> Option<PathBuf> {
         self.manifest_path
             .as_ref()

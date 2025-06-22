@@ -7,8 +7,8 @@ use {
     anyhow::Result,
     argh::FromArgs,
     bundle_problem::BundleProblemSubCmd,
-    include_dir::{Dir, include_dir},
     create_contest::CreateContestSubCmd,
+    include_dir::{Dir, include_dir},
     std::{fs, path::Path},
 };
 
@@ -43,7 +43,6 @@ impl MainCmd {
     }
 }
 
-pub static SRC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src");
 pub static TPL_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/tpl");
 pub static RUSTFMT_TOML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/rustfmt.toml"));
 pub static GITIGNORE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/.gitignore"));
