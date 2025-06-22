@@ -65,7 +65,7 @@ impl CreateContestSubCmd {
                     format!("Manifest file not found: {:?}", manifest_path),
                 ));
             }
-            todo!("Create a new contest project with the specified manifest path");
+            unimplemented!("Using a custom manifest path is not yet implemented.");
             return Ok(());
         }
 
