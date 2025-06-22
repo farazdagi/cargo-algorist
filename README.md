@@ -1,30 +1,32 @@
 # algorist
 
-[![crates.io](https://img.shields.io/crates/d/algorist.svg)](https://crates.io/crates/algorist)
-[![docs.rs](https://docs.rs/algorist/badge.svg)](https://docs.rs/algorist)
+[![crates.io](https://img.shields.io/crates/d/cargo-algorist.svg)](https://crates.io/crates/cargo-algorist)
+[![docs.rs](https://docs.rs/cargo-algorist/badge.svg)](https://docs.rs/cargo-algorist)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
-[![dependencies](https://deps.rs/repo/github/farazdagi/algorist/status.svg)](https://deps.rs/repo/github/farazdagi/algorist)
+[![dependencies](https://deps.rs/repo/github/farazdagi/cargo-algorist/status.svg)](https://deps.rs/repo/github/farazdagi/cargo-algorist)
 
-Helper tools, algorithms and data structures for competitive programming.
+Cargo sub-command to manage the [algorist](https://crates.io/crates/algorist) crate.
 
-Algorist is both a CLI tool for managing programming contest projects AND a collection of useful
-algorithms and data structures to use in those projects.
+This crate is a CLI tool for managing programming contest projects AND a collection of useful
+algorithms and data structures to use in those projects. It is aimed as a one-stop solution for
+competitive programming in Rust.
 
 ## Installation
 
 The crate provides cargo sub-command `algorist`, which can be installed using:
 
 ``` bash
-cargo install algorist
+cargo install cargo-algorist
 ```
 
 Once installed, you can use it as `cargo algorist`.
 
 ## Usage
 
-The `algorist` CLI tool provides a way to create a new contest project, which is a normal Rust
-project, use additional modules with common algorithms and data structures, and then bundle each
-problem into a single output file that can be submitted to the contest system.
+The `algorist` CLI tool provides a way to quickly create a new contest project, which is just a
+normal Rust project, and allows to use additional modules with common algorithms and data
+structures, work on problems, and when tests do pass, bundle each problem into a single output file
+that can be submitted to the contest system.
 
 ### Create a new contest project
 
@@ -42,20 +44,22 @@ This will create a Rust project with all the necessary problem files and algorit
 into it.
 
 Problem files will be created in `src/bin` directory, and the library with algorithms and data
-structures will be created in `src/algorist` module.
+structures will be created in `crates/algorist` directory.
+
+To see that everything works, you can run the problem file `src/bin/a.rs`:
 
 ``` bash
 # run problem A (`src/bin/a.rs`)
-# it expects input from stdin
+# it expects input from stdin (type 1 2 3 and press Enter)
 cargo run --bin a
 
 # it is a normal Rust project, you can use all the usual commands
 cargo build
-cargo test
+cargo test --bin a
 ```
 
-If you don't want to have initial problem files, you can create a new contest project with `--empty`
-flag:
+If you don't want to have initial problem files added to the contest project, you can create a new
+contest project with `--empty` flag:
 
 ``` bash
 cargo algorist create <contest_id> --empty
