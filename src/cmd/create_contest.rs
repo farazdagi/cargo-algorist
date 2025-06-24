@@ -25,7 +25,7 @@ pub struct CreateContestSubCmd {
     /// contest ID
     id: String,
 
-    #[argh(option)]
+    #[argh(option, short = 'p')]
     /// path to `Cargo.toml` file (contains base algorithms and data structures
     /// project)
     manifest_path: Option<String>,
