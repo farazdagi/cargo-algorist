@@ -95,11 +95,12 @@ fn main() {
 ```
 
 See the [`documentation`](https://docs.rs/algorist/latest/algorist/) on `io` module (and other
-provided algorithms and data structures) for more details on the default code provided in problem
-files.
+provided algorithms and data structures of [algorist](https://crates.io/crates/algorist) crate) for
+more details on the default code provided in problem files.
 
 Normally, when working on solution, you copy the tests cases from the contest system into the
-clipboard (or file), and then need to see the output of your program:
+clipboard (or file), and then need to see the output of your program. With the project created using
+`algorist`, you can do this easily:
 
 ``` bash
 # alias pbpaste=’xsel — clipboard — output’ on Linux
@@ -130,11 +131,19 @@ Only the modules actually used in the problem file will be included in the outpu
 
 ## Included algorithms and data structures
 
-The Algorist is also a library of algorithms and data structures, which will be copied into your
-contest project, and can be used in your problem files.
+The Algorist library contains a lot of useful code that can be imported into your contest projects.
 
-See [`algorist`](https://docs.rs/algorist/latest/algorist/) documentation for a complete list of
-available algorithms and data structures, as well as their usage examples.
+See [`algorist`](https://docs.rs/algorist/latest/algorist/) crate documentation for a complete list
+of available algorithms and data structures, as well as their usage examples.
+
+## Using your own algorithms and data structures
+
+While the Algorist crate provides a lot of useful algorithms and data structures, the original plan
+was to allow users to also rely on their own code, i.e. you are working on contest problems, and
+when you find something that can be abstracted into a reusable module, you can do it and expand your
+own library of algorithms.
+
+Support for this is in the works, but not yet fully implemented.
 
 ## License
 
