@@ -1,8 +1,6 @@
 # algorist
 
 [![crates.io](https://img.shields.io/crates/d/cargo-algorist.svg)](https://crates.io/crates/cargo-algorist)
-[![docs.rs](https://docs.rs/cargo-algorist/badge.svg)](https://docs.rs/cargo-algorist)
-[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 [![dependencies](https://deps.rs/repo/github/farazdagi/cargo-algorist/status.svg)](https://deps.rs/repo/github/farazdagi/cargo-algorist)
 
 Cargo sub-command to manage the [algorist](https://crates.io/crates/algorist) crate.
