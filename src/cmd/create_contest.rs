@@ -8,6 +8,15 @@ use {
     },
 };
 
+const ALGORIST_VERSION: &str = "0.9";
+
+/// What external crate to use for the contest project.
+#[derive(PartialEq)]
+enum LibraryCrate {
+    Algorist,
+    Custom,
+}
+
 /// Create a new contest project.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "create")]
@@ -43,11 +52,20 @@ impl SubCmd for CreateContestSubCmd {
         fs::create_dir_all(src_dir)?;
 
         // Copy template files into the contest directory.
-        self.create_project(&target_dir)
+        let library_crate_used = self
+            .create_project(&target_dir)
             .context("failed to copy template files")?;
 
-        self.cargo_vendor(&target_dir)
-            .context("failed to run cargo vendor")?;
+        // At the moment `cargo vendor` does not support vendoring of path dependencies,
+        // so we manually copy the external crate into the contest project (when
+        // manifest path is provided).
+        //
+        // Once/If vendoring is supported, then manual copying can be removed.
+        // See: https://github.com/rust-lang/cargo/issues/10134
+        if library_crate_used == LibraryCrate::Algorist {
+            self.cargo_vendor(&target_dir)
+                .context("failed to run cargo vendor")?;
+        }
 
         println!("New contest created at {target_dir:?}");
         Ok(())
@@ -55,24 +73,42 @@ impl SubCmd for CreateContestSubCmd {
 }
 
 impl CreateContestSubCmd {
-    fn create_project(&self, target: &Path) -> std::io::Result<()> {
-        if let Some(manifest_path) = &self.manifest_path {
-            // Ensure that the manifest path exists.
-            let manifest_path = PathBuf::from(manifest_path);
-            if !manifest_path.exists() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Manifest file not found: {:?}", manifest_path),
-                ));
-            }
-            println!("Using a custom manifest path is not yet implemented.");
-            return Ok(());
-        }
+    fn create_project(&self, target: &Path) -> std::io::Result<LibraryCrate> {
+        // Flag to indicate whether the default library is used.
+        let mut default_library_used = true;
 
         // Copy the necessary library files for contest project.
         println!("Copying template files to the contest directory...");
         copy(&TPL_DIR, ".cargo/**/*", &target.join(""))?;
         copy_to(&TPL_DIR, "Cargo.toml.tpl", &target.join("Cargo.toml"))?;
+
+        // Update the Cargo.toml, inject either path to crate with algorithms and data
+        // structures, or select the version of `algorist` crate to use.
+        println!("Injecting algorithms library crate into Cargo.toml...");
+        let cargo_toml = target.join("Cargo.toml");
+        let mut content = fs::read_to_string(&cargo_toml)?;
+        if let Some((crate_name, crate_path)) =
+            external_crate(target, self.manifest_path.as_deref())?
+        {
+            println!(
+                "- Using external crate: {:?} ({:?})",
+                crate_name, crate_path
+            );
+            let import_line = format!(
+                "{crate_name} = {{ path = \"{}\" }}",
+                // if/when `cargo vendor` supports paths, use `crate_path.to_string_lossy()`
+                format!("crates/{}", crate_name)
+            );
+            content = content.replace("{{EXTERNAL_CRATE}}", &import_line);
+            default_library_used = false;
+        } else {
+            println!("- Using `algorist` crate from crates.io.");
+            content = content.replace(
+                "{{EXTERNAL_CRATE}}",
+                format!("algorist = \"{}\"", ALGORIST_VERSION).as_str(),
+            );
+        }
+        fs::write(cargo_toml, content)?;
 
         // Copy files from root directory.
         fs::write(target.join(".gitignore"), GITIGNORE)?;
@@ -90,7 +126,11 @@ impl CreateContestSubCmd {
             }
         }
 
-        Ok(())
+        if default_library_used {
+            Ok(LibraryCrate::Algorist)
+        } else {
+            Ok(LibraryCrate::Custom)
+        }
     }
 
     fn cargo_vendor(&self, target: &Path) -> Result<()> {
@@ -111,12 +151,131 @@ impl CreateContestSubCmd {
         );
         Ok(())
     }
+}
 
-    #[allow(dead_code)]
-    fn manifest_path(&self) -> Option<PathBuf> {
-        self.manifest_path
-            .as_ref()
-            .map(PathBuf::from)
-            .and_then(|p| p.canonicalize().ok())
+/// Checks the provided manifest path, and copies external crate into the
+/// contest project.
+///
+/// Returns the crate name and path to the external crate.
+///
+/// If the manifest path is not `None`, the function checks if the path exists
+/// and is either a `Cargo.toml` file or a directory containing a `Cargo.toml`
+/// file.
+fn external_crate(
+    target: &Path,
+    manifest_path: Option<&str>,
+) -> std::io::Result<Option<(String, PathBuf)>> {
+    if let Some(manifest_path) = manifest_path {
+        // Ensure that the manifest path exists.
+        let manifest_path = PathBuf::from(manifest_path);
+        if !manifest_path.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Manifest path not found: {:?}", manifest_path),
+            ));
+        }
+
+        // Ensure that path either ends with `Cargo.toml` or is a directory, that
+        // contains `Cargo.toml`.
+        if !manifest_path.ends_with("Cargo.toml") && !manifest_path.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Manifest path must be a Cargo.toml file or a directory containing Cargo.toml",
+            ));
+        }
+
+        // If the manifest path is a directory, find the Cargo.toml file in it.
+        let manifest_path = if manifest_path.is_dir() {
+            manifest_path.join("Cargo.toml")
+        } else {
+            manifest_path
+        };
+        if !manifest_path.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Cargo.toml file not found at: {:?}", manifest_path),
+            ));
+        }
+
+        // Once we located the `Cargo.toml` file, we can determine the crate name and
+        // the path to the external crate.
+        let crate_name = crate_name(&manifest_path)?;
+        if let Some(parent) = manifest_path.parent() {
+            let crate_path = parent.to_path_buf().canonicalize()?;
+
+            // Copy the external crate into the contest project's `crates` directory.
+            // Files are copied to `crates/<crate_name>`. Git artifacts are not copied.
+            let target_crate_path = target.join("crates").join(&crate_name);
+            if target_crate_path.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!(
+                        "External crate directory already exists: {:?}",
+                        target_crate_path
+                    ),
+                ));
+            }
+            println!(
+                "- Copying external crate from {:?} to {:?}",
+                crate_path, target_crate_path
+            );
+            fs::create_dir_all(&target_crate_path)?;
+            copy_crate(&crate_path, &target_crate_path)?;
+
+            return Ok(Some((crate_name, crate_path)));
+        }
     }
+    Ok(None)
+}
+
+/// Given path to `Cargo.toml`, returns the crate name.
+fn crate_name(path: &Path) -> std::io::Result<String> {
+    use toml::Value;
+    if path.exists() {
+        let content = fs::read_to_string(path)?;
+        if let Ok(value) = content.parse::<Value>() {
+            if let Some(name) = value
+                .get("package")
+                .and_then(|pkg| pkg.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                return Ok(name.to_string());
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Cargo.toml does not contain a package name",
+                ));
+            }
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!("Cargo.toml not found at: {:?}", path),
+    ))
+}
+
+const IGNORED_FILES: [&str; 3] = [".git", "target", "Cargo.lock"];
+
+/// Copy the external crate from the source path to the target path.
+///
+/// Ignored files/directories: `.git`, `target`, `Cargo.lock`.
+fn copy_crate(source: &Path, target: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = entry.file_name();
+        if let Some(file_name) = file_name.to_str() {
+            if IGNORED_FILES.contains(&file_name) {
+                continue;
+            }
+        }
+        let target_path = target.join(file_name);
+        if path.is_dir() {
+            fs::create_dir_all(&target_path)?;
+            copy_crate(&path, &target_path)?;
+        } else if path.is_file() {
+            fs::copy(&path, &target_path)?;
+        }
+    }
+    Ok(())
 }

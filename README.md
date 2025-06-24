@@ -141,7 +141,28 @@ was to allow users to also rely on their own code, i.e. you are working on conte
 when you find something that can be abstracted into a reusable module, you can do it and expand your
 own library of algorithms.
 
-Support for this is in the works, but not yet fully implemented.
+By default, when creating projects with `cargo algorist create` the
+[`algorist`](https://docs.rs/algorist/latest/algorist/) library will be added into `crates/algorist`
+directory.
+
+If you want to use your own library, specify path to it using `--manifest-path`:
+
+``` bash
+cargo algorist create <contest_id> --manifest-path /path/to/your/lib/Cargo.toml
+
+# Path to project (directory with `Cargo.toml`) will also work
+cargo algorist create <contest_id> --manifest-path /path/to/your/lib
+```
+
+Your project will be created in the same way, but instead of copying the
+[`algorist`](https://docs.rs/algorist/latest/algorist/) library, it will use your own library.
+
+It is recommended that you start by forking the [`algorist`](https://github.com/farazdagi/algorist)
+repository, and then use it as a base for your own library (remove everything, but `io`, and have
+fun).
+
+Note that default problem files will assume that at least `io` module is available, so you will need
+to provide it in your own library.
 
 ## License
 
