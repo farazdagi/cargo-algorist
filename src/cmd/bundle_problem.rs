@@ -3,14 +3,16 @@ use {
     anyhow::{Context, Result},
     argh::FromArgs,
     prettyplease::unparse,
+    regex::Regex,
     std::{
         collections::HashSet,
         fs::{self, File},
         io::{BufWriter, Write},
-        path::PathBuf,
+        path::{Path, PathBuf},
     },
     syn::{parse_file, parse_quote, visit::Visit, visit_mut::VisitMut},
     tap::Tap,
+    toml::Value,
 };
 
 /// Bundle given problem into a single file.
@@ -29,15 +31,13 @@ impl SubCmd for BundleProblemSubCmd {
             self.id
         ))?;
 
-        Bundler1::new(&mut ctx)?
+        Bundler::new(&mut ctx)?
             .run()
             .context(format!("failed to bundle problem {}", self.id))?;
 
         Ok(())
     }
 }
-
-const MAIN_MOD: &str = "algorist";
 
 /// Represents a set of used modules and their paths.
 ///
@@ -82,30 +82,49 @@ trait BunlingPhase {}
 mod phases {
     use super::*;
 
-    pub struct ProcessBinaryFile {
-        pub used_mods: UsedMods,
-    }
+    pub struct ProcessBinaryFile {}
+
+    pub struct CollectLibraryFiles {}
 
     pub struct ProcessLibraryFile {
-        pub used_mods: UsedMods,
-        pub base_path: PathBuf,
-        pub base_path_relative: String,
+        pub crate_name: String,
+        pub path: PathBuf,
+        pub import_path: String,
     }
 
     pub struct BundlingCompleted;
 
     impl BunlingPhase for ProcessBinaryFile {}
+    impl BunlingPhase for CollectLibraryFiles {}
     impl BunlingPhase for ProcessLibraryFile {}
     impl BunlingPhase for BundlingCompleted {}
 }
 
 #[derive(Debug)]
 struct BundlerContext {
-    main_mod: String,
+    /// Problem ID, used to locate the source file.
     problem_id: String,
+
+    /// List of crates available in the project.
+    ///
+    /// Basically, folder names in `crates` directory.
+    /// Any import that is not from these crates will be ignored.
+    crates: Vec<String>,
+
+    /// Set of used modules, collected from the binary file.
+    modules: UsedMods,
+
+    /// Root path of the project, in canonical form.
     root_path: String,
+
+    /// Source file path, in canonical form.
     src: PathBuf,
+
+    /// Destination file path, in canonical form.
     dst: PathBuf,
+
+    /// Output file writer.
+    /// All bundled code will be written to this file.
     out: BufWriter<File>,
 }
 
@@ -121,13 +140,18 @@ impl BundlerContext {
         let dst = PathBuf::from(format!("./bundled/{}.rs", problem_id));
         let out = BufWriter::new(File::create(&dst).context("failed to create output file")?);
 
-        let root_path = PathBuf::from("src")
+        let root_path = PathBuf::from("./")
             .canonicalize()
-            .context("Failed to canonicalize src path")?;
+            .context("Failed to canonicalize root path")?;
+
+        // Get the list of crates available in the project.
+        let crates =
+            crate_names(Path::new("crates")).context("failed to get library crate names")?;
 
         Ok(Self {
-            main_mod: MAIN_MOD.to_string(),
             problem_id: problem_id.to_string(),
+            crates,
+            modules: UsedMods::new(),
             root_path: root_path.display().to_string(),
             src,
             dst,
@@ -137,28 +161,26 @@ impl BundlerContext {
 }
 
 #[derive(Debug)]
-struct Bundler1<'a, P: BunlingPhase = phases::ProcessBinaryFile> {
+struct Bundler<'a, P: BunlingPhase = phases::ProcessBinaryFile> {
     ctx: &'a mut BundlerContext,
     state: P,
 }
 
-impl<'a> Bundler1<'a, phases::ProcessBinaryFile> {
+impl<'a> Bundler<'a, phases::ProcessBinaryFile> {
     fn new(ctx: &'a mut BundlerContext) -> Result<Self> {
         Ok(Self {
             ctx,
-            state: phases::ProcessBinaryFile {
-                used_mods: UsedMods::new(),
-            },
+            state: phases::ProcessBinaryFile {},
         })
     }
 
     fn run(self) -> Result<()> {
         self.process_binary_file()?
-            .process_library_file()?
+            .collect_library_files()?
             .complete_bundling()
     }
 
-    fn process_binary_file(mut self) -> Result<Bundler1<'a, phases::ProcessLibraryFile>> {
+    fn process_binary_file(mut self) -> Result<Bundler<'a, phases::CollectLibraryFiles>> {
         let src = self.ctx.src.display().to_string();
         let dst = self.ctx.dst.display().to_string();
         println!("Bundling {src} -> {dst}");
@@ -172,19 +194,14 @@ impl<'a> Bundler1<'a, phases::ProcessBinaryFile> {
         // Write the source file -- unmodified -- to the output file.
         writeln!(self.ctx.out, "{}", unparse(&ast)).context("failed to write source file")?;
 
-        let main_mod = self.ctx.main_mod.clone();
-        Ok(Bundler1 {
+        Ok(Bundler {
             ctx: self.ctx,
-            state: phases::ProcessLibraryFile {
-                used_mods: self.state.used_mods,
-                base_path: PathBuf::from("src/algorist")
-                    .canonicalize()
-                    .context("failed to canonicalize src path")?,
-                base_path_relative: main_mod,
-            },
+            state: phases::CollectLibraryFiles {},
         })
     }
 
+    /// Extracts used modules from the `use` tree and inserts them into the
+    /// context.
     fn process_item_use(&mut self, tree: &syn::UseTree) -> Result<()> {
         use syn::{UseGlob, UseGroup, UseName, UsePath, UseRename, UseTree};
 
@@ -219,24 +236,23 @@ impl<'a> Bundler1<'a, phases::ProcessBinaryFile> {
                 continue;
             }
 
-            // Skip paths that do not start with the main module.
-            // Bundler is only interested in imports from the main module.
-            if path[0] != MAIN_MOD || path.len() < 2 {
+            // Skip paths that do not start with the known crate name.
+            if !self.ctx.crates.contains(&path[0]) {
                 continue;
             }
 
-            self.state.used_mods.insert(&path[1..]);
+            self.ctx.modules.insert(&path);
         }
 
         Ok(())
     }
 }
 
-impl<'ast> Visit<'ast> for Bundler1<'_, phases::ProcessBinaryFile> {
+impl<'ast> Visit<'ast> for Bundler<'_, phases::ProcessBinaryFile> {
     fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
-        // Ignore all imports except those from the current crate.
+        // Ignore all imports except those from the available crates.
         if let syn::UseTree::Path(path) = &node.tree {
-            if path.ident != self.ctx.main_mod {
+            if !self.ctx.crates.contains(&path.ident.to_string()) {
                 return;
             }
         }
@@ -246,13 +262,53 @@ impl<'ast> Visit<'ast> for Bundler1<'_, phases::ProcessBinaryFile> {
     }
 }
 
-impl<'a> Bundler1<'a, phases::ProcessLibraryFile> {
-    fn process_library_file(mut self) -> Result<Bundler1<'a, phases::BundlingCompleted>> {
-        // Read the library source file (located in `algorist/mod.rs`) to expand all
-        // used modules. Modules are expanded recursively.
+impl<'a> Bundler<'a, phases::CollectLibraryFiles> {
+    fn collect_library_files(self) -> Result<Bundler<'a, phases::BundlingCompleted>> {
+        // For all crates in `crates` directory, we need to check if they are used in
+        // the binary, and if so, process their library files.
+        let crate_names = self.ctx.crates.clone();
+        for crate_name in crate_names {
+            if !self.ctx.modules.contains(&crate_name) {
+                println!("Ignoring unused crate: {crate_name}");
+                continue;
+            }
+
+            println!("Processing crate: {crate_name:?}");
+            Bundler {
+                ctx: self.ctx,
+                state: phases::ProcessLibraryFile {
+                    crate_name: crate_name.clone(),
+                    path: PathBuf::from(format!("crates/{crate_name}/src"))
+                        .canonicalize()
+                        .context("failed to canonicalize src path")?,
+                    import_path: crate_name.clone(),
+                },
+            }
+            .process_library_file(&crate_name)
+            .context(format!(
+                "failed to process library file for crate {crate_name}"
+            ))?;
+        }
+
+        Ok(Bundler {
+            ctx: self.ctx,
+            state: phases::BundlingCompleted {},
+        })
+    }
+}
+
+impl<'a> Bundler<'a, phases::ProcessLibraryFile> {
+    fn process_library_file(&mut self, crate_name: &str) -> Result<()> {
+        // Read the library source file to expand all used modules.
+        // Modules are expanded recursively.
         // Modules that are not used in the binary are ignored.
-        let file_content = fs::read_to_string(format!("src/{}/mod.rs", self.ctx.main_mod))
-            .context("failed to read library file")?;
+        let file_content = match fs::read_to_string(format!("crates/{}/src/lib.rs", crate_name)) {
+            Ok(content) => content,
+            Err(_) => {
+                println!("Library file for crate {crate_name:?} not found, skipping.");
+                return Ok(());
+            }
+        };
         let mut ast = parse_file(&file_content).context("failed to parse library file")?;
         self.visit_file_mut(&mut ast);
 
@@ -267,39 +323,45 @@ impl<'a> Bundler1<'a, phases::ProcessLibraryFile> {
             ],
             vis: syn::Visibility::Inherited,
             mod_token: Default::default(),
-            ident: syn::Ident::new(&self.ctx.main_mod, proc_macro2::Span::call_site()),
+            ident: syn::Ident::new(crate_name, proc_macro2::Span::call_site()),
             content: Some((Default::default(), items)),
             semi: None,
         });
         ast.items = vec![mod_item];
 
         // Write the modified AST back to the output file.
-        writeln!(self.ctx.out, "{}", unparse(&ast)).context("failed to write bundled file")?;
+        let content = self
+            .post_process_output_string(unparse(&ast))
+            .context("failed to unparse and post-process output string")?;
+        writeln!(self.ctx.out, "{}", content).context("failed to write bundled file")?;
 
-        Ok(Bundler1 {
-            ctx: self.ctx,
-            state: phases::BundlingCompleted,
-        })
+        Ok(())
+    }
+
+    fn post_process_output_string(&mut self, content: String) -> Result<String> {
+        // Replace `crate::` with `crate::{self.state.crate_name}::` in use paths.
+        // Basically you just inject `{self.state.crate_name}::` after `crate::`.
+        //
+        // The reason is that we bundle crates as modules, within the binary file,
+        // so we need to adjust the paths accordingly.
+        let re = Regex::new(r"crate::\b").unwrap();
+        let new_content = re.replace_all(&content, format!("crate::{}::", self.state.crate_name));
+
+        Ok(new_content.into_owned())
     }
 
     fn is_used_in_binary(&self, node: &syn::ItemMod) -> bool {
         // If base path is not empty, prefix the module name with it.
-        let mod_name = node.ident.to_string();
-        let mod_name = if self.state.base_path_relative.is_empty() {
-            mod_name
+        let mod_name = if self.state.import_path.is_empty() {
+            node.ident.to_string()
         } else {
-            format!("{}/{}", self.state.base_path_relative, mod_name)
-                .strip_prefix('/')
-                .unwrap_or(&mod_name)
-                .strip_prefix("algorist/")
-                .unwrap_or(&mod_name)
-                .to_string()
+            format!("{}/{}", self.state.import_path, node.ident.to_string())
         };
 
-        self.state.used_mods.contains(&mod_name).tap(|&res| {
+        self.ctx.modules.contains(&mod_name).tap(|&res| {
             println!(
                 "- Processing module: {mod_name:?} {}",
-                if res { " [used]" } else { " [ignored]" }
+                if res { "[used]" } else { "[ignored]" }
             );
         })
     }
@@ -316,8 +378,8 @@ impl<'a> Bundler1<'a, phases::ProcessLibraryFile> {
         // Module may be EITHER in the form of `src/foo.rs` or `src/foo/mod.rs`.
         // Try both, and since only one works, we can use `find` to get the first one.
         let (base_path, code): (_, String) = vec![
-            format!("{}/{}.rs", self.state.base_path.display(), mod_name),
-            format!("{}/{}/mod.rs", self.state.base_path.display(), mod_name),
+            format!("{}/{}.rs", self.state.path.display(), mod_name),
+            format!("{}/{}/mod.rs", self.state.path.display(), mod_name),
         ]
         .into_iter()
         .map(PathBuf::from)
@@ -342,16 +404,20 @@ impl<'a> Bundler1<'a, phases::ProcessLibraryFile> {
             .context("failed to parse source file")
             .expect("Failed to parse module file");
 
-        let base_path_relative = base_path
+        let import_path = base_path
             .display()
             .to_string()
-            .replace(&self.ctx.root_path, "");
-        Bundler1 {
+            .replace(&self.ctx.root_path, "")
+            .replace(
+                &format!("/crates/{}/src", self.state.crate_name),
+                &self.state.crate_name,
+            );
+        Bundler {
             ctx: self.ctx,
             state: phases::ProcessLibraryFile {
-                used_mods: self.state.used_mods.clone(),
-                base_path,
-                base_path_relative,
+                crate_name: self.state.crate_name.clone(),
+                path: base_path,
+                import_path,
             },
         }
         .visit_file_mut(&mut ast);
@@ -361,7 +427,7 @@ impl<'a> Bundler1<'a, phases::ProcessLibraryFile> {
     }
 }
 
-impl<'a> VisitMut for Bundler1<'a, phases::ProcessLibraryFile> {
+impl<'a> VisitMut for Bundler<'a, phases::ProcessLibraryFile> {
     fn visit_attributes_mut(&mut self, attrs: &mut Vec<syn::Attribute>) {
         // Drop all attributes that are not relevant for bundling.
         *attrs = attrs
@@ -437,37 +503,9 @@ impl<'a> VisitMut for Bundler1<'a, phases::ProcessLibraryFile> {
             }
         }
     }
-
-    fn visit_use_tree_mut(&mut self, node: &mut syn::UseTree) {
-        fn fix_crate_use_path(node: &mut syn::UseTree) {
-            // Replace `crate::` with `crate::algorist::` in use paths.
-            // Basically you just inject `algorist::` after `crate::`.
-            if let syn::UseTree::Path(path) = node {
-                if path.ident == "crate" {
-                    if let syn::UseTree::Path(inner_path) = &*path.tree {
-                        if inner_path.ident == MAIN_MOD {
-                            // Already rewritten, do nothing
-                            return;
-                        }
-                    }
-
-                    let new_path = syn::UseTree::Path(syn::UsePath {
-                        ident: syn::Ident::new(MAIN_MOD, path.ident.span()),
-                        colon2_token: Default::default(),
-                        tree: Box::new(*path.tree.clone()),
-                    });
-                    path.tree = Box::new(new_path);
-                }
-            }
-        }
-
-        fix_crate_use_path(node);
-
-        syn::visit_mut::visit_use_tree_mut(self, node);
-    }
 }
 
-impl<'a> Bundler1<'a, phases::BundlingCompleted> {
+impl<'a> Bundler<'a, phases::BundlingCompleted> {
     fn complete_bundling(self) -> Result<()> {
         println!(
             "Problem {:?} bundled successfully into {:?}",
@@ -476,4 +514,29 @@ impl<'a> Bundler1<'a, phases::BundlingCompleted> {
 
         Ok(())
     }
+}
+
+fn crate_names(crates_dir: &Path) -> std::io::Result<Vec<String>> {
+    let mut crate_names = Vec::new();
+    for entry in fs::read_dir(crates_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let cargo_toml = path.join("Cargo.toml");
+            if cargo_toml.exists() {
+                let content = fs::read_to_string(cargo_toml)?;
+                if let Ok(value) = content.parse::<Value>() {
+                    if let Some(name) = value
+                        .get("package")
+                        .and_then(|pkg| pkg.get("name"))
+                        .and_then(|n| n.as_str())
+                    {
+                        crate_names.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(crate_names)
 }

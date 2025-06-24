@@ -1,6 +1,6 @@
 [package]
 name = "cargo-algorist"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 authors = ["Victor Farazdagi <farazdagi@gmail.com>"]
@@ -30,3 +30,5 @@ quote = "1"
 proc-macro2 = "1.0"
 prettyplease = "0.2"
 tap = "1.0"
+toml = "0.8"
+regex = "1.11"
