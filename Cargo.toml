@@ -1,13 +1,12 @@
 [package]
 name = "cargo-algorist"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
 authors = ["Victor Farazdagi <farazdagi@gmail.com>"]
 description = "Cargo subcommand to manage the algorist crate"
 homepage = "https://github.com/farazdagi/cargo-algorist"
 repository = "https://github.com/farazdagi/cargo-algorist"
-documentation = "https://docs.rs/cargo-algorist"
 readme = "README.md"
 keywords = ["algorithms", "data-structures", "codeforces"]
 categories = ["algorithms", "data-structures"]
