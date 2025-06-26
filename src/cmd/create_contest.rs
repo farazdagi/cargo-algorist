@@ -12,7 +12,7 @@ use {
     },
 };
 
-const ALGORIST_VERSION: &str = "0.9";
+const ALGORIST_VERSION: &str = "0.10";
 
 /// Create a new contest project.
 #[derive(FromArgs)]
