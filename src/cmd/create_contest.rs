@@ -2,20 +2,17 @@ use {
     crate::cmd::{GITIGNORE, RUSTFMT_TOML, SubCmd, TPL_DIR, copy, copy_to},
     anyhow::{Context, Result, anyhow},
     argh::FromArgs,
+    serde_json::json,
+    sha2::{Digest, Sha256},
     std::{
-        fs,
+        collections::BTreeMap,
+        fs::{self, File},
+        io::{BufReader, Read, Write},
         path::{Path, PathBuf},
     },
 };
 
 const ALGORIST_VERSION: &str = "0.9";
-
-/// What external crate to use for the contest project.
-#[derive(PartialEq)]
-enum LibraryCrate {
-    Algorist,
-    Custom,
-}
 
 /// Create a new contest project.
 #[derive(FromArgs)]
@@ -52,20 +49,12 @@ impl SubCmd for CreateContestSubCmd {
         fs::create_dir_all(src_dir)?;
 
         // Copy template files into the contest directory.
-        let library_crate_used = self
-            .create_project(&target_dir)
+        self.create_project(&target_dir)
             .context("failed to copy template files")?;
 
-        // At the moment `cargo vendor` does not support vendoring of path dependencies,
-        // so we manually copy the external crate into the contest project (when
-        // manifest path is provided).
-        //
-        // Once/If vendoring is supported, then manual copying can be removed.
-        // See: https://github.com/rust-lang/cargo/issues/10134
-        if library_crate_used == LibraryCrate::Algorist {
-            self.cargo_vendor(&target_dir)
-                .context("failed to run cargo vendor")?;
-        }
+        // Vendor dependencies using `cargo vendor`.
+        self.cargo_vendor(&target_dir)
+            .context("failed to run cargo vendor")?;
 
         println!("New contest created at {target_dir:?}");
         Ok(())
@@ -73,10 +62,7 @@ impl SubCmd for CreateContestSubCmd {
 }
 
 impl CreateContestSubCmd {
-    fn create_project(&self, target: &Path) -> std::io::Result<LibraryCrate> {
-        // Flag to indicate whether the default library is used.
-        let mut default_library_used = true;
-
+    fn create_project(&self, target: &Path) -> std::io::Result<()> {
         // Copy the necessary library files for contest project.
         println!("Copying template files to the contest directory...");
         copy(&TPL_DIR, ".cargo/**/*", &target.join(""))?;
@@ -100,7 +86,6 @@ impl CreateContestSubCmd {
                 format!("crates/{}", crate_name)
             );
             content = content.replace("{{EXTERNAL_CRATE}}", &import_line);
-            default_library_used = false;
         } else {
             println!("- Using `algorist` crate from crates.io.");
             content = content.replace(
@@ -126,11 +111,7 @@ impl CreateContestSubCmd {
             }
         }
 
-        if default_library_used {
-            Ok(LibraryCrate::Algorist)
-        } else {
-            Ok(LibraryCrate::Custom)
-        }
+        Ok(())
     }
 
     fn cargo_vendor(&self, target: &Path) -> Result<()> {
@@ -138,6 +119,7 @@ impl CreateContestSubCmd {
         let status = std::process::Command::new("cargo")
             .arg("vendor")
             .arg("crates")
+            .arg("--no-delete")
             .arg("--quiet")
             .current_dir(target)
             .status()
@@ -221,6 +203,7 @@ fn external_crate(
             );
             fs::create_dir_all(&target_crate_path)?;
             copy_crate(&crate_path, &target_crate_path)?;
+            update_checksum_json(&target_crate_path)?;
 
             return Ok(Some((crate_name, crate_path)));
         }
@@ -277,5 +260,49 @@ fn copy_crate(source: &Path, target: &Path) -> std::io::Result<()> {
             fs::copy(&path, &target_path)?;
         }
     }
+    Ok(())
+}
+
+/// Updates or creates `.cargo-checksum.json` in the given crate directory.
+/// Skips `.cargo-checksum.json` itself.
+pub fn update_checksum_json(crate_dir: &Path) -> std::io::Result<()> {
+    let mut files = BTreeMap::new();
+
+    for entry in walkdir::WalkDir::new(crate_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        let rel_path = entry.path().strip_prefix(crate_dir).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Failed to strip prefix from path",
+            )
+        })?;
+        if rel_path == Path::new(".cargo-checksum.json") {
+            continue;
+        }
+        let mut file = BufReader::new(File::open(entry.path())?);
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        let hash = format!("{:x}", hasher.finalize());
+        files.insert(rel_path.to_string_lossy().replace('\\', "/"), hash);
+    }
+
+    let json_obj = json!({
+        "files": files,
+        "package": null
+    });
+
+    let checksum_path = crate_dir.join(".cargo-checksum.json");
+    let mut out = File::create(checksum_path)?;
+    out.write_all(serde_json::to_string_pretty(&json_obj)?.as_bytes())?;
     Ok(())
 }
