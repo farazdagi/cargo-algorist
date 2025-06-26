@@ -114,6 +114,20 @@ impl CreateContestSubCmd {
             }
         }
 
+        // Create empty `inputs/{a-h}.txt` or `inputs/input.txt` (when `--empty` flag is
+        // used) files.
+        let inputs_dir = target.join("inputs");
+        fs::create_dir_all(&inputs_dir)?;
+        if self.empty {
+            println!("Creating empty input file...");
+            fs::write(inputs_dir.join("input.txt"), "")?;
+        } else {
+            println!("Creating empty input files for problems a-h...");
+            for letter in 'a'..='h' {
+                fs::write(target.join(format!("inputs/{letter}.txt")), "")?;
+            }
+        }
+
         Ok(())
     }
 

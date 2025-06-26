@@ -32,16 +32,24 @@ impl SubCmd for AddProblemSubCmd {
             fs::create_dir(&bin_dir).context("failed to create src/bin directory")?;
         }
 
+        let id = self.id.trim_end_matches(".rs");
+
         // Copy template file to the `src/bin` directory.
         // If the file already exists, emit an error.
-        let target_file = bin_dir.join(format!("{}.rs", self.id.trim_end_matches(".rs")));
+        let target_file = bin_dir.join(format!("{}.rs", id));
         if target_file.exists() {
             return Err(anyhow!("Problem file already exists: {:?}", target_file));
         }
-
         copy_to(&TPL_DIR, "problem.rs", &target_file)?;
-
         println!("Problem template added at {target_file:?}");
+
+        // Create empty `inputs/{id}.txt` file.
+        let inputs_dir = PathBuf::from("./inputs")
+            .canonicalize()
+            .context("failed to canonicalize inputs directory path")?;
+        let target_file = inputs_dir.join(format!("{}.txt", id));
+        fs::write(&target_file, "")?;
+        println!("Input file created at {target_file:?}");
 
         Ok(())
     }
