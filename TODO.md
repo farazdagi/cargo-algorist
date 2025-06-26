@@ -11,6 +11,7 @@
 
 - [ ] Allow `pub use` re-exports (expose primes in math module and make sure that bundling works)
 
-- [ ] Allow to use external `algos` lib -- implement `--manifest-path path/to/Cargo.toml` flag
+- [x] Allow to use external `algos` lib -- implement `--manifest-path path/to/Cargo.toml` flag
 
-- [ ] How to contribute (and develop your own version of library).
+- [x] How to contribute (and develop your own version of library).
+
