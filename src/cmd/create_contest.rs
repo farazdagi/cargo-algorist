@@ -100,7 +100,10 @@ impl CreateContestSubCmd {
         fs::write(target.join("rustfmt.toml"), RUSTFMT_TOML)?;
 
         // Create files for problems a-h.
-        if !self.empty {
+        if self.empty {
+            // If `empty` flag is set, create a single `main.rs` file.
+            copy_to(&TPL_DIR, "main.rs", &target.join(format!("src/main.rs")))?;
+        } else {
             println!("Adding problems a-h to the contest...");
             for letter in 'a'..='h' {
                 copy_to(
