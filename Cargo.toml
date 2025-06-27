@@ -1,6 +1,6 @@
 [package]
 name = "cargo-algorist"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 license = "MIT"
 authors = ["Victor Farazdagi <farazdagi@gmail.com>"]
@@ -13,6 +13,10 @@ categories = ["algorithms", "data-structures"]
 
 [[bin]]
 name = "cargo-algorist"
+path = "src/main.rs"
+
+[[bin]]
+name = "algorist"
 path = "src/main.rs"
 
 [dependencies]

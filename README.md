@@ -112,16 +112,16 @@ cargo algorist bundle a # `.rs` is not required
 cargo algorist bundle a.rs
 ```
 
-This will create a single output file in `bundled/bin/<problem_id>.rs` file, which can be submitted
-to the contest system.
+This will create a single output file in `bundled/src/bin/<problem_id>.rs` file, which can be
+submitted to the contest system.
 
 You can test it by running:
 
 ``` bash
 cargo run --manifest-path bundled/Cargo.toml --bin <problem_id>
 
-# The code id `bundled` directory is just a Rust project,
-# with single-file binaries for each problem:
+# The code in `bundled` is a Rust project, with single-file 
+# binaries for each problem. So, you can also run:
 cd bundled
 cargo run --bin <problem_id>
 ```
