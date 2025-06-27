@@ -1,5 +1,5 @@
 use {
-    crate::cmd::SubCmd,
+    crate::cmd::{SubCmd, TPL_DIR, copy_to},
     anyhow::{Context, Result},
     argh::FromArgs,
     prettyplease::unparse,
@@ -136,8 +136,21 @@ impl BundlerContext {
             .context("source file for the problem is not found")?;
 
         // Create the destination directory if it doesn't exist.
-        fs::create_dir_all(PathBuf::from("bundled"))?;
-        let dst = PathBuf::from(format!("./bundled/{}.rs", problem_id));
+        let bundled_dir = PathBuf::from("./bundled");
+        fs::create_dir_all(bundled_dir.join("src/bin"))?;
+
+        // Copy over `Cargo.toml` file to the bundled directory.
+        // Replace the `{{EXTERNAL_CRATE}}` placeholder with an empty string.
+        let cargo_toml = bundled_dir.join("Cargo.toml");
+        copy_to(&TPL_DIR, "Cargo.toml.tpl", &cargo_toml)?;
+        fs::write(
+            &cargo_toml,
+            fs::read_to_string(&cargo_toml)?.replace("{{EXTERNAL_CRATE}}", ""),
+        )?;
+
+        let dst = bundled_dir
+            .join("src/bin")
+            .join(format!("{}.rs", problem_id));
         let out = BufWriter::new(File::create(&dst).context("failed to create output file")?);
 
         let root_path = PathBuf::from("./")
