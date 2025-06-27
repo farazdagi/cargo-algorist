@@ -99,7 +99,7 @@ cargo run --bin <problem_id>
 algorist run <problem_id> # same as above
 
 # From input file
-cargo run --bin <problem_id> < input.txt
+cargo run --bin <problem_id> < inputs/<problem_id>.txt
 algorist run -i <problem_id> # same as above
 
 # From clipboard (rarely used, but still useful)
