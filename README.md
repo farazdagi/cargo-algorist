@@ -11,7 +11,8 @@ Cargo sub-command to manage the [algorist](https://crates.io/crates/algorist) cr
 cargo install cargo-algorist
 ```
 
-Once installed, you can use it as `cargo algorist`.
+Once installed, you can use it as `cargo algorist` or as `algorist` directly (within this document,
+we will use `algorist` for brevity).
 
 ## Usage
 
@@ -20,11 +21,11 @@ Once installed, you can use it as `cargo algorist`.
 To create a new contest project:
 
 ``` bash
-cargo algorist create <contest_id>
+algorist create <contest_id>
 
 # examples:
-cargo algorist create 4545
-cargo algorist create contests/4545 # sub-folders are supported
+algorist create 4545
+algorist create contests/4545 # sub-folders are supported
 ```
 
 This will create a Rust project with all the necessary problem files and algorithm modules copied
@@ -38,10 +39,14 @@ To ensure that everything works, run the problem file in `src/bin/a.rs`:
 ``` bash
 # run problem A (`src/bin/a.rs`)
 # it expects input from stdin (type 1 2 3 and press Enter)
-cargo run --bin a
+algorist run a
+
+# expects input from `inputs/a.txt` file
+algorist run -i a
 
 # it is a normal Rust project, you can use all the usual commands
 cargo build
+cargo run --bin a
 cargo test --bin a
 ```
 
@@ -49,17 +54,17 @@ If you don't want to have initial problem files added to the contest project, yo
 contest project with `--empty` flag:
 
 ``` bash
-cargo algorist create <contest_id> --empty
+algorist create <contest_id> --empty
 ```
 
 Later on, you can always add a problem file into `src/bin` directory, using:
 
 ``` bash
-cargo algorist add <problem_id>
+algorist add <problem_id>
 
 # examples:
-cargo algorist add a        # `.rs` is not required
-cargo algorist add a.rs     # same as above
+algorist add a        # `.rs` is not required
+algorist add a.rs     # same as above
 ```
 
 ### Work on a problem
@@ -89,9 +94,17 @@ clipboard (or file), and then need to see the output of your program.
 With the project created using `cargo-algorist`, you can do this easily:
 
 ``` bash
+# From standard input (default)
+cargo run --bin <problem_id>
+algorist run <problem_id> # same as above
+
+# From input file
+cargo run --bin <problem_id> < input.txt
+algorist run -i <problem_id> # same as above
+
+# From clipboard (rarely used, but still useful)
 # alias pbpaste=’xsel — clipboard — output’ on Linux
 pbpaste | cargo run --bin <problem_id>   # gets input from clipboard
-cargo run --bin <problem_id> < input.txt # gets input from file
 ```
 
 Once you are happy with the output, you can submit the solution back to the contest system (by
@@ -105,11 +118,11 @@ of that file. At the very least `io` module is expected to be included in such a
 To bundle a given problem file, use the following command:
 
 ``` bash
-cargo algorist bundle <problem_id>
+algorist bundle <problem_id>
 
 # examples:
-cargo algorist bundle a # `.rs` is not required
-cargo algorist bundle a.rs
+algorist bundle a # `.rs` is not required
+algorist bundle a.rs
 ```
 
 This will create a single output file in `bundled/src/bin/<problem_id>.rs` file, which can be
@@ -120,7 +133,7 @@ You can test it by running:
 ``` bash
 cargo run --manifest-path bundled/Cargo.toml --bin <problem_id>
 
-# The code in `bundled` is a Rust project, with single-file 
+# The code in `bundled` is a Rust project, with single-file
 # binaries for each problem. So, you can also run:
 cd bundled
 cargo run --bin <problem_id>
@@ -149,13 +162,13 @@ of algorithms. This way your library grows with your experience.
 To use your own library, specify path to it with `--manifest-path` (or `-p`):
 
 ``` bash
-cargo algorist create <contest_id> --manifest-path /path/to/Cargo.toml
-cargo algorist create <contest_id> -p /path/to/Cargo.toml
+algorist create <contest_id> --manifest-path /path/to/Cargo.toml
+algorist create <contest_id> -p /path/to/Cargo.toml
 
 # Path to project (directory with `Cargo.toml`) will also work
 # No need to specify `Cargo.toml` file explicitly
-cargo algorist create <contest_id> --manifest-path /path/to
-cargo algorist create <contest_id> -p /path/to
+algorist create <contest_id> --manifest-path /path/to
+algorist create <contest_id> -p /path/to
 ```
 
 Your project will be created in the same way, but instead of copying the Algorist library, it will

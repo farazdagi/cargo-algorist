@@ -1,6 +1,7 @@
 pub mod add_problem;
 pub mod bundle_problem;
 pub mod create_contest;
+pub mod run_problem;
 
 use {
     add_problem::AddProblemSubCmd,
@@ -9,6 +10,7 @@ use {
     bundle_problem::BundleProblemSubCmd,
     create_contest::CreateContestSubCmd,
     include_dir::{Dir, include_dir},
+    run_problem::RunProblemSubCmd,
     std::{fs, path::Path},
 };
 
@@ -30,15 +32,17 @@ enum Cmd {
     NewContest(CreateContestSubCmd),
     BundleProblem(BundleProblemSubCmd),
     AddProblem(AddProblemSubCmd),
+    RunProblem(RunProblemSubCmd),
 }
 
 impl MainCmd {
     /// Run the nested command.
     pub fn run(&self) -> Result<()> {
         match &self.nested {
-            Cmd::NewContest(new_cmd) => new_cmd.run(),
-            Cmd::BundleProblem(bundle_cmd) => bundle_cmd.run(),
-            Cmd::AddProblem(add_cmd) => add_cmd.run(),
+            Cmd::NewContest(cmd) => cmd.run(),
+            Cmd::BundleProblem(cmd) => cmd.run(),
+            Cmd::AddProblem(cmd) => cmd.run(),
+            Cmd::RunProblem(cmd) => cmd.run(),
         }
     }
 }
