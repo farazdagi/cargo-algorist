@@ -5,7 +5,7 @@ use {
     prettyplease::unparse,
     regex::Regex,
     std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         fs::{self, File},
         io::{BufWriter, Write},
         path::{Path, PathBuf},
@@ -109,7 +109,7 @@ struct BundlerContext {
     ///
     /// Basically, folder names in `crates` directory.
     /// Any import that is not from these crates will be ignored.
-    crates: Vec<String>,
+    crates: Crates,
 
     /// Set of used modules, collected from the binary file.
     modules: UsedMods,
@@ -158,8 +158,7 @@ impl BundlerContext {
             .context("Failed to canonicalize root path")?;
 
         // Get the list of crates available in the project.
-        let crates =
-            crate_names(Path::new("crates")).context("failed to get library crate names")?;
+        let crates = crates(Path::new("crates")).context("failed to get library crate names")?;
 
         Ok(Self {
             problem_id: problem_id.to_string(),
@@ -279,19 +278,23 @@ impl<'a> Bundler<'a, phases::CollectLibraryFiles> {
     fn collect_library_files(self) -> Result<Bundler<'a, phases::BundlingCompleted>> {
         // For all crates in `crates` directory, we need to check if they are used in
         // the binary, and if so, process their library files.
-        let crate_names = self.ctx.crates.clone();
-        for crate_name in crate_names {
+        let crates = self.ctx.crates.clone();
+        for (crate_name, crate_path) in crates.into_iter() {
             if !self.ctx.modules.contains(&crate_name) {
                 println!("Ignoring unused crate: {crate_name}");
                 continue;
             }
 
-            println!("Processing crate: {crate_name:?}");
+            println!(
+                "Processing crate: {crate_name:?} ({})",
+                crate_path.display()
+            );
             Bundler {
                 ctx: self.ctx,
                 state: phases::ProcessLibraryFile {
                     crate_name: crate_name.clone(),
-                    path: PathBuf::from(format!("crates/{crate_name}/src"))
+                    path: crate_path
+                        .join("src")
                         .canonicalize()
                         .context("failed to canonicalize src path")?,
                     import_path: crate_name.clone(),
@@ -315,7 +318,12 @@ impl<'a> Bundler<'a, phases::ProcessLibraryFile> {
         // Read the library source file to expand all used modules.
         // Modules are expanded recursively.
         // Modules that are not used in the binary are ignored.
-        let file_content = match fs::read_to_string(format!("crates/{}/src/lib.rs", crate_name)) {
+        let crate_path = self
+            .ctx
+            .crates
+            .path(crate_name)
+            .context(format!("crate {crate_name} not found"))?;
+        let file_content = match fs::read_to_string(crate_path.join("src/lib.rs")) {
             Ok(content) => content,
             Err(_) => {
                 println!("Library file for crate {crate_name:?} not found, skipping.");
@@ -529,8 +537,33 @@ impl<'a> Bundler<'a, phases::BundlingCompleted> {
     }
 }
 
-fn crate_names(crates_dir: &Path) -> std::io::Result<Vec<String>> {
-    let mut crate_names = Vec::new();
+#[derive(Debug, Clone)]
+struct Crates(HashMap<String, PathBuf>);
+
+impl Crates {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn push(&mut self, name: &str, path: PathBuf) {
+        self.0.insert(name.replace("-", "_"), path);
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    fn path(&self, name: &str) -> Option<&PathBuf> {
+        self.0.get(name)
+    }
+
+    fn into_iter(self) -> impl Iterator<Item = (String, PathBuf)> {
+        self.0.into_iter()
+    }
+}
+
+fn crates(crates_dir: &Path) -> std::io::Result<Crates> {
+    let mut crate_names = Crates::new();
     for entry in fs::read_dir(crates_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -544,7 +577,7 @@ fn crate_names(crates_dir: &Path) -> std::io::Result<Vec<String>> {
                         .and_then(|pkg| pkg.get("name"))
                         .and_then(|n| n.as_str())
                     {
-                        crate_names.push(name.to_string());
+                        crate_names.push(name, path);
                     }
                 }
             }
