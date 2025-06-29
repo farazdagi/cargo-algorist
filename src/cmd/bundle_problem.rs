@@ -425,14 +425,24 @@ impl<'a> Bundler<'a, phases::ProcessLibraryFile> {
             .context("failed to parse source file")
             .expect("Failed to parse module file");
 
+        let crate_src_path = self
+            .ctx
+            .crates
+            .path(&self.state.crate_name)
+            .expect("crate path not found")
+            .join("src");
         let import_path = base_path
             .display()
             .to_string()
             .replace(&self.ctx.root_path, "")
             .replace(
-                &format!("/crates/{}/src", self.state.crate_name),
+                crate_src_path
+                    .to_str()
+                    .expect("failed to convert crate source path"),
                 &self.state.crate_name,
-            );
+            )
+            .trim_start_matches('/')
+            .to_string();
         Bundler {
             ctx: self.ctx,
             state: phases::ProcessLibraryFile {
