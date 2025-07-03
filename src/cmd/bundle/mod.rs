@@ -1,18 +1,19 @@
+mod context;
+mod parsed_data;
+
 use {
-    crate::cmd::{SubCmd, TPL_DIR, copy_to},
+    crate::cmd::{SubCmd, bundle::context::BundlerContext},
     anyhow::{Context, Result},
     argh::FromArgs,
     prettyplease::unparse,
     regex::Regex,
     std::{
-        collections::{HashMap, HashSet},
-        fs::{self, File},
-        io::{BufWriter, Write},
+        fs,
+        io::Write,
         path::{Path, PathBuf},
     },
     syn::{parse_file, parse_quote, visit::Visit, visit_mut::VisitMut},
     tap::Tap,
-    toml::Value,
 };
 
 /// Bundle given problem into a single file.
@@ -36,87 +37,6 @@ impl SubCmd for BundleProblemSubCmd {
             .context(format!("failed to bundle problem {}", self.id))?;
 
         Ok(())
-    }
-}
-
-/// Represents a set of used modules and their paths.
-///
-/// Paths are calculated based on the used modules. Each segment in a used
-/// module is part of some path. So, for example, if we have a used module
-/// `algorist::foo::bar`, it means that we have three paths:
-/// `/algorist`, `/algorist/foo`, and `/algorist/foo/bar`.
-#[derive(Debug, Default, Clone)]
-struct UsedMods {
-    /// Set of paths that are used in the binary file.
-    paths: HashSet<String>,
-
-    /// This is a map of fully qualified names for `pub use` declarations.
-    /// The key is alias name, and the value is the fully qualified name.
-    pub_use_decls: HashMap<String, String>,
-
-    /// If an aliased name is used in the binary file, it will be marked as
-    /// `true`, and its corresponding `pub use` declaration, will remain in the
-    /// final output. Otherwise, it will be removed (since its module is also
-    /// omitted).
-    pub_use_used: HashSet<String>,
-}
-
-impl UsedMods {
-    fn new() -> Self {
-        Self {
-            paths: HashSet::new(),
-            pub_use_decls: HashMap::new(),
-            pub_use_used: HashSet::new(),
-        }
-    }
-
-    fn insert(&mut self, segments: &[String]) {
-        let segments = segments.to_vec();
-
-        // Full path is added immediately, so that we can check if the path is already
-        // inserted.
-        self.paths.insert(segments.join("/"));
-
-        // Traverse the segments and create paths.
-        let mut path = String::new();
-        for segment in &segments {
-            if !path.is_empty() {
-                path.push('/');
-            }
-            path.push_str(segment);
-
-            let cur_path = path.clone();
-            self.paths.insert(cur_path.clone());
-
-            // See if the current path is an alias created with `pub use`
-            if let Some(fully_qualified) = self.pub_use_decls.get(&cur_path) {
-                // If it is, we need to insert the fully qualified name as well, if it is not
-                // already inserted.
-                if !self.paths.contains(fully_qualified) {
-                    self.insert(
-                        fully_qualified
-                            .split('/')
-                            .map(String::from)
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    );
-                }
-                // Mark item as used, so that its `pub use` declaration and the corresponding
-                // module will be included in the final output.
-                self.pub_use_used.insert(cur_path);
-            }
-        }
-    }
-
-    /// Check if path is contained in the set of used modules.
-    fn contains(&self, other: &str) -> bool {
-        self.paths.contains(other)
-    }
-
-    /// Insert a `pub use` declaration into the set of used modules.
-    fn insert_pub_use_decl(&mut self, alias: &str, fully_qualified: &str) {
-        self.pub_use_decls
-            .insert(alias.to_string(), fully_qualified.to_string());
     }
 }
 
@@ -159,78 +79,6 @@ mod phases {
     impl BunlingPhase for CollectLibraryFiles {}
     impl BunlingPhase for ProcessLibraryFile {}
     impl BunlingPhase for BundlingCompleted {}
-}
-
-#[derive(Debug)]
-struct BundlerContext {
-    /// Problem ID, used to locate the source file.
-    problem_id: String,
-
-    /// List of crates available in the project.
-    ///
-    /// Basically, folder names in `crates` directory.
-    /// Any import that is not from these crates will be ignored.
-    crates: Crates,
-
-    /// Set of used modules, collected from the binary file.
-    modules: UsedMods,
-
-    /// Root path of the project, in canonical form.
-    root_path: String,
-
-    /// Source file path, in canonical form.
-    src: PathBuf,
-
-    /// Destination file path, in canonical form.
-    dst: PathBuf,
-
-    /// Output file writer.
-    /// All bundled code will be written to this file.
-    out: BufWriter<File>,
-}
-
-impl BundlerContext {
-    fn new(problem_id: &str) -> Result<Self> {
-        // Validate the problem ID.
-        let src = PathBuf::from(format!("./src/bin/{}.rs", problem_id))
-            .canonicalize()
-            .context("source file for the problem is not found")?;
-
-        // Create the destination directory if it doesn't exist.
-        let bundled_dir = PathBuf::from("./bundled");
-        fs::create_dir_all(bundled_dir.join("src/bin"))?;
-
-        // Copy over `Cargo.toml` file to the bundled directory.
-        // Replace the `{{EXTERNAL_CRATE}}` placeholder with an empty string.
-        let cargo_toml = bundled_dir.join("Cargo.toml");
-        copy_to(&TPL_DIR, "Cargo.toml.tpl", &cargo_toml)?;
-        fs::write(
-            &cargo_toml,
-            fs::read_to_string(&cargo_toml)?.replace("{{EXTERNAL_CRATE}}", ""),
-        )?;
-
-        let dst = bundled_dir
-            .join("src/bin")
-            .join(format!("{}.rs", problem_id));
-        let out = BufWriter::new(File::create(&dst).context("failed to create output file")?);
-
-        let root_path = PathBuf::from("./")
-            .canonicalize()
-            .context("Failed to canonicalize root path")?;
-
-        // Get the list of crates available in the project.
-        let crates = crates(Path::new("crates")).context("failed to get library crate names")?;
-
-        Ok(Self {
-            problem_id: problem_id.to_string(),
-            crates,
-            modules: UsedMods::new(),
-            root_path: root_path.display().to_string(),
-            src,
-            dst,
-            out,
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -291,7 +139,7 @@ impl<'a> Bundler<'a, phases::CollectPubUseDecl> {
                 let (alias, fully_qualified) =
                     tranform_alias_and_fqn(alias, &self.state.import_path, &path);
                 self.ctx
-                    .modules
+                    .used_paths
                     .insert_pub_use_decl(&alias, &fully_qualified);
             }
         }
@@ -397,7 +245,7 @@ impl<'a> Bundler<'a, phases::ProcessBinaryFile> {
                 continue;
             }
 
-            self.ctx.modules.insert(&path);
+            self.ctx.used_paths.insert_path(&path.join("/"));
         }
 
         Ok(())
@@ -424,7 +272,7 @@ impl<'a> Bundler<'a, phases::CollectLibraryFiles> {
         // the binary, and if so, process their library files.
         let crates = self.ctx.crates.clone();
         for (crate_name, crate_path) in crates.into_iter() {
-            if !self.ctx.modules.contains(&crate_name) {
+            if !self.ctx.used_paths.contains_path(&crate_name) {
                 println!("Ignoring unused crate: {crate_name}");
                 continue;
             }
@@ -523,7 +371,7 @@ impl<'a> Bundler<'a, phases::ProcessLibraryFile> {
             format!("{}/{}", self.state.import_path, node.ident.to_string())
         };
 
-        self.ctx.modules.contains(&mod_name).tap(|&res| {
+        self.ctx.used_paths.contains_path(&mod_name).tap(|&res| {
             println!(
                 "- Processing module: {mod_name:?} {}",
                 if res { "[used]" } else { "[ignored]" }
@@ -603,7 +451,7 @@ impl<'a> Bundler<'a, phases::ProcessLibraryFile> {
                                     path.last().expect("Path must have at least one segment");
                                 let (alias, _fully_qualified) =
                                     tranform_alias_and_fqn(alias, &self.state.import_path, &path);
-                                if self.ctx.modules.pub_use_used.get(&alias).is_some() {
+                                if self.ctx.used_paths.is_pub_use_used(&alias) {
                                     new_items.push(syn::Item::Use(use_item));
                                 }
                             }
@@ -666,56 +514,6 @@ impl<'a> Bundler<'a, phases::BundlingCompleted> {
 
         Ok(())
     }
-}
-
-#[derive(Debug, Clone)]
-struct Crates(HashMap<String, PathBuf>);
-
-impl Crates {
-    fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    fn push(&mut self, name: &str, path: PathBuf) {
-        self.0.insert(name.replace("-", "_"), path);
-    }
-
-    fn contains(&self, name: &str) -> bool {
-        self.0.contains_key(name)
-    }
-
-    fn path(&self, name: &str) -> Option<&PathBuf> {
-        self.0.get(name)
-    }
-
-    fn into_iter(self) -> impl Iterator<Item = (String, PathBuf)> {
-        self.0.into_iter()
-    }
-}
-
-fn crates(crates_dir: &Path) -> std::io::Result<Crates> {
-    let mut crate_names = Crates::new();
-    for entry in fs::read_dir(crates_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            let cargo_toml = path.join("Cargo.toml");
-            if cargo_toml.exists() {
-                let content = fs::read_to_string(cargo_toml)?;
-                if let Ok(value) = content.parse::<Value>() {
-                    if let Some(name) = value
-                        .get("package")
-                        .and_then(|pkg| pkg.get("name"))
-                        .and_then(|n| n.as_str())
-                    {
-                        crate_names.push(name, path);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(crate_names)
 }
 
 fn is_test_module(item_mod: &syn::ItemMod) -> bool {

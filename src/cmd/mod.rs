@@ -1,16 +1,16 @@
-pub mod add_problem;
-pub mod bundle_problem;
-pub mod create_contest;
-pub mod run_problem;
+pub mod add;
+pub mod bundle;
+pub mod create;
+pub mod run;
 
 use {
-    add_problem::AddProblemSubCmd,
+    add::AddProblemSubCmd,
     anyhow::Result,
     argh::FromArgs,
-    bundle_problem::BundleProblemSubCmd,
-    create_contest::CreateContestSubCmd,
+    bundle::BundleProblemSubCmd,
+    create::CreateContestSubCmd,
     include_dir::{Dir, include_dir},
-    run_problem::RunProblemSubCmd,
+    run::RunProblemSubCmd,
     std::{fs, path::Path},
 };
 
