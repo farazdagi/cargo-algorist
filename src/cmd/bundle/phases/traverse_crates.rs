@@ -84,6 +84,49 @@ impl TraverseCrates {
             }
         }
     }
+
+    fn traverse_mod(&mut self, ctx: &mut BundlerContext, node: &syn::ItemMod) {
+        if node.content.is_some() {
+            return;
+        }
+
+        if is_test_module(node) {
+            return;
+        }
+
+        let mod_name = node.ident.to_string();
+        let (base_path, code) = load_mod(&self.path, &mod_name).expect("Failed to load module");
+
+        let ast = parse_file(&code).expect("Failed to parse module file");
+
+        let crate_src_path = ctx
+            .crates
+            .path(&self.crate_name)
+            .expect("crate path not found")
+            .join("src");
+        let import_path = base_path
+            .display()
+            .to_string()
+            .replace(&ctx.root_path, "")
+            .replace(
+                crate_src_path
+                    .to_str()
+                    .expect("failed to convert crate source path"),
+                &self.crate_name,
+            )
+            .trim_start_matches('/')
+            .to_string();
+
+        FileProcessor {
+            ctx,
+            state: TraverseCrates {
+                crate_name: self.crate_name.clone(),
+                path: base_path,
+                import_path,
+            },
+        }
+        .visit_file(&ast);
+    }
 }
 
 /// Processes a single file, recursively descending into its modules.
@@ -96,48 +139,7 @@ impl<'a> FileProcessor<'a> {}
 
 impl<'ast> Visit<'ast> for FileProcessor<'_> {
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        if node.content.is_some() {
-            return;
-        }
-
-        if is_test_module(node) {
-            return;
-        }
-
-        let mod_name = node.ident.to_string();
-        let (base_path, code) =
-            load_mod(&self.state.path, &mod_name).expect("Failed to load module");
-
-        let ast = parse_file(&code).expect("Failed to parse module file");
-
-        let crate_src_path = self
-            .ctx
-            .crates
-            .path(&self.state.crate_name)
-            .expect("crate path not found")
-            .join("src");
-        let import_path = base_path
-            .display()
-            .to_string()
-            .replace(&self.ctx.root_path, "")
-            .replace(
-                crate_src_path
-                    .to_str()
-                    .expect("failed to convert crate source path"),
-                &self.state.crate_name,
-            )
-            .trim_start_matches('/')
-            .to_string();
-
-        FileProcessor {
-            ctx: self.ctx,
-            state: TraverseCrates {
-                crate_name: self.state.crate_name.clone(),
-                path: base_path,
-                import_path,
-            },
-        }
-        .visit_file(&ast);
+        self.state.traverse_mod(self.ctx, node);
 
         syn::visit::visit_item_mod(self, node);
     }

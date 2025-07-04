@@ -16,7 +16,7 @@ pub struct ParseBinary {}
 impl BunlingPhase for ParseBinary {}
 
 impl<'a> Bundler<'a, ParseBinary> {
-    pub fn parse_binary(mut self) -> Result<Bundler<'a, phases::CollectLibraryFiles>> {
+    pub fn parse_binary(mut self) -> Result<Bundler<'a, phases::ExpandMods>> {
         let src = self.ctx.src.display().to_string();
         let dst = self.ctx.dst.display().to_string();
         println!("Bundling {src} -> {dst}");
@@ -32,7 +32,7 @@ impl<'a> Bundler<'a, ParseBinary> {
 
         Ok(Bundler {
             ctx: self.ctx,
-            state: phases::CollectLibraryFiles {},
+            state: phases::ExpandMods::default(),
         })
     }
 }
@@ -41,6 +41,13 @@ impl ParseBinary {
     /// Extracts used modules from the `use` tree and saves them for later
     /// stages.
     fn extract_used_mods(&mut self, ctx: &mut BundlerContext, node: &syn::ItemUse) {
+        // Ignore all imports except those from the available crates.
+        if let syn::UseTree::Path(path) = &node.tree {
+            if !ctx.crates.contains(&path.ident.to_string()) {
+                return;
+            }
+        }
+
         let paths = extract_imported_paths(&node.tree, Vec::new());
         for path in paths {
             if path.is_empty() {
@@ -60,15 +67,7 @@ impl ParseBinary {
 
 impl<'ast> Visit<'ast> for Bundler<'_, phases::ParseBinary> {
     fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
-        // Ignore all imports except those from the available crates.
-        if let syn::UseTree::Path(path) = &node.tree {
-            if !self.ctx.crates.contains(&path.ident.to_string()) {
-                return;
-            }
-        }
-
         self.state.extract_used_mods(self.ctx, node);
-
         syn::visit::visit_item_use(self, node);
     }
 }
