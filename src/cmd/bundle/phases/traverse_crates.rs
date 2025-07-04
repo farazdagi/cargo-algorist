@@ -3,6 +3,7 @@ use {
         Bundler,
         context::BundlerContext,
         phases::{
+            self,
             BunlingPhase,
             utils::{
                 extract_imported_paths,
@@ -30,7 +31,7 @@ pub struct TraverseCrates {
 impl BunlingPhase for TraverseCrates {}
 
 impl<'a> Bundler<'a, TraverseCrates> {
-    pub fn traverse_crates(self) -> Result<Bundler<'a, super::ProcessBinaryFile>> {
+    pub fn traverse_crates(self) -> Result<Bundler<'a, phases::ParseBinary>> {
         // For all crates in `crates` directory, start traversal of their files.
         let crates = self.ctx.crates.clone();
         for (crate_name, crate_path) in crates.into_iter() {
@@ -57,7 +58,7 @@ impl<'a> Bundler<'a, TraverseCrates> {
 
         Ok(Bundler {
             ctx: self.ctx,
-            state: super::ProcessBinaryFile {},
+            state: phases::ParseBinary {},
         })
     }
 }

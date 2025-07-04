@@ -20,7 +20,7 @@ use {
     prettyplease::unparse,
     regex::Regex,
     std::{fs, io::Write},
-    syn::{parse_file, parse_quote, visit::Visit, visit_mut::VisitMut},
+    syn::{parse_file, parse_quote, visit_mut::VisitMut},
     tap::Tap,
 };
 
@@ -42,7 +42,7 @@ impl SubCmd for BundleProblemSubCmd {
 
         Bundler::new(&mut ctx)?
             .traverse_crates()?
-            .process_binary_file()?
+            .parse_binary()?
             .collect_library_files()?
             .complete_bundling()
     }
@@ -60,63 +60,6 @@ impl<'a> Bundler<'a, phases::TraverseCrates> {
             ctx,
             state: phases::TraverseCrates::default(),
         })
-    }
-}
-
-impl<'a> Bundler<'a, phases::ProcessBinaryFile> {
-    fn process_binary_file(mut self) -> Result<Bundler<'a, phases::CollectLibraryFiles>> {
-        let src = self.ctx.src.display().to_string();
-        let dst = self.ctx.dst.display().to_string();
-        println!("Bundling {src} -> {dst}");
-
-        // Read the executable source file to find used modules.
-        let file_content =
-            fs::read_to_string(&self.ctx.src).context("failed to read source file")?;
-        let mut ast = parse_file(&file_content).context("failed to parse source file")?;
-        self.visit_file(&mut ast);
-
-        // Write the source file -- unmodified -- to the output file.
-        writeln!(self.ctx.out, "{}", unparse(&ast)).context("failed to write source file")?;
-
-        Ok(Bundler {
-            ctx: self.ctx,
-            state: phases::CollectLibraryFiles {},
-        })
-    }
-
-    /// Extracts used modules from the `use` tree and inserts them into the
-    /// context.
-    fn process_item_use(&mut self, tree: &syn::UseTree) -> Result<()> {
-        let paths = extract_imported_paths(tree, Vec::new());
-        for path in paths {
-            if path.is_empty() {
-                // Skip empty paths
-                continue;
-            }
-
-            // Skip paths that do not start with the known crate name.
-            if !self.ctx.crates.contains(&path[0]) {
-                continue;
-            }
-
-            self.ctx.used_paths.insert_path(&path.join("/"));
-        }
-
-        Ok(())
-    }
-}
-
-impl<'ast> Visit<'ast> for Bundler<'_, phases::ProcessBinaryFile> {
-    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
-        // Ignore all imports except those from the available crates.
-        if let syn::UseTree::Path(path) = &node.tree {
-            if !self.ctx.crates.contains(&path.ident.to_string()) {
-                return;
-            }
-        }
-
-        self.process_item_use(&node.tree)
-            .expect("Failed to process use tree");
     }
 }
 
