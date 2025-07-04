@@ -1,3 +1,4 @@
+pub mod complete_bundling;
 pub mod traverse_crates;
 pub mod utils;
 
@@ -6,7 +7,7 @@ use std::path::PathBuf;
 /// Represents a phase in the bundling process.
 pub trait BunlingPhase: Sized {}
 
-pub use traverse_crates::TraverseCrates;
+pub use {complete_bundling::CompleteBundling, traverse_crates::TraverseCrates};
 
 /// Extract all used modules from the binary file.
 pub struct ProcessBinaryFile {}
@@ -22,10 +23,6 @@ pub struct ProcessLibraryFile {
     pub import_path: String,
 }
 
-/// Marks the end of the bundling process.
-pub struct BundlingCompleted;
-
 impl BunlingPhase for ProcessBinaryFile {}
 impl BunlingPhase for CollectLibraryFiles {}
 impl BunlingPhase for ProcessLibraryFile {}
-impl BunlingPhase for BundlingCompleted {}

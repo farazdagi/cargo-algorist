@@ -19,10 +19,7 @@ use {
     },
     prettyplease::unparse,
     regex::Regex,
-    std::{
-        fs,
-        io::Write,
-    },
+    std::{fs, io::Write},
     syn::{parse_file, parse_quote, visit::Visit, visit_mut::VisitMut},
     tap::Tap,
 };
@@ -45,10 +42,9 @@ impl SubCmd for BundleProblemSubCmd {
 
         Bundler::new(&mut ctx)?
             .traverse_crates()?
-            .run()
-            .context(format!("failed to bundle problem {}", self.id))?;
-
-        Ok(())
+            .process_binary_file()?
+            .collect_library_files()?
+            .complete_bundling()
     }
 }
 
@@ -68,12 +64,6 @@ impl<'a> Bundler<'a, phases::TraverseCrates> {
 }
 
 impl<'a> Bundler<'a, phases::ProcessBinaryFile> {
-    fn run(self) -> Result<()> {
-        self.process_binary_file()?
-            .collect_library_files()?
-            .complete_bundling()
-    }
-
     fn process_binary_file(mut self) -> Result<Bundler<'a, phases::CollectLibraryFiles>> {
         let src = self.ctx.src.display().to_string();
         let dst = self.ctx.dst.display().to_string();
@@ -131,7 +121,7 @@ impl<'ast> Visit<'ast> for Bundler<'_, phases::ProcessBinaryFile> {
 }
 
 impl<'a> Bundler<'a, phases::CollectLibraryFiles> {
-    fn collect_library_files(self) -> Result<Bundler<'a, phases::BundlingCompleted>> {
+    fn collect_library_files(self) -> Result<Bundler<'a, phases::CompleteBundling>> {
         // For all crates in `crates` directory, we need to check if they are used in
         // the binary, and if so, process their library files.
         let crates = self.ctx.crates.clone();
@@ -164,7 +154,7 @@ impl<'a> Bundler<'a, phases::CollectLibraryFiles> {
 
         Ok(Bundler {
             ctx: self.ctx,
-            state: phases::BundlingCompleted {},
+            state: phases::CompleteBundling {},
         })
     }
 }
@@ -366,16 +356,5 @@ impl<'a> VisitMut for Bundler<'a, phases::ProcessLibraryFile> {
                 self.visit_item_mut(it);
             }
         }
-    }
-}
-
-impl<'a> Bundler<'a, phases::BundlingCompleted> {
-    fn complete_bundling(self) -> Result<()> {
-        println!(
-            "Problem {:?} bundled successfully into {:?}",
-            self.ctx.problem_id, self.ctx.dst
-        );
-
-        Ok(())
     }
 }
